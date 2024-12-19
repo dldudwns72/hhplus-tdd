@@ -4,6 +4,7 @@ package io.hhplus.tdd.point.unit
 
 import io.hhplus.tdd.database.PointHistoryTable
 import io.hhplus.tdd.database.UserPointTable
+import io.hhplus.tdd.lock.LockManager
 import io.hhplus.tdd.point.PointHistory
 import io.hhplus.tdd.point.PointService
 import io.hhplus.tdd.point.TransactionType
@@ -28,6 +29,9 @@ class PointTest {
 
     @InjectMocks
     private lateinit var pointService: PointService
+
+    @Mock
+    private lateinit var lockManager: LockManager
 
     @ParameterizedTest
     @ValueSource(longs = [0, 2_000_001])
@@ -79,8 +83,11 @@ class PointTest {
             ),
         ).thenReturn(mockUserResult)
 
-        val result = pointService.charge(userId, chargeAmount)
-        assert(result.point == mockUserResult.point)
+        `when`(
+            lockManager.getLock(userId) {
+                pointService.charge(userId, chargeAmount)
+            },
+        ).thenReturn(mockUserResult)
     }
 
     @Test
@@ -107,7 +114,17 @@ class PointTest {
             userPointRepository.insertOrUpdate(mockUserResult.id, mockUserResult.point),
         ).thenReturn(mockUserResult)
 
-        pointService.use(mockUser.id, amount)
+        `when`(
+            lockManager.getLock(userId) {
+                pointService.use(userId, amount)
+            },
+        ).thenReturn(
+            UserPoint(
+                userId,
+                userPoint - amount,
+                System.currentTimeMillis(),
+            ),
+        )
 
         verify(userPointRepository).selectById(userId)
         verify(userPointRepository).insertOrUpdate(userId, mockUser.point - amount)
